@@ -83,6 +83,15 @@ Entity.prototype.collisionRectangle = function () {
     return new Rectangle(this.position.x - this.width/2, this.position.y - this.height/2, this.width, this.height);
 }
 
+// Projectile
+function Projectile(position, speed, direction, type) {
+    Entity.call(this, position, speed, direction);
+    this.type = type;
+    this.width = 3;
+    this.height = 5;
+}
+Projectile.prototype = Object.create(Entity.prototype);
+
 // Player
 function Player(position, speed, direction) {
     Entity.call(this, position, speed, direction);
@@ -115,7 +124,13 @@ Player.prototype.moveLeft = function (enable) {
 };
 
 Player.prototype.fire = function () {
-    console.log("TODO");
+    function isPlayerType(proj) {
+        return (proj.type === "player");
+    }
+    var count = game.projectiles().filter(isPlayerType).length;
+    if (count === 0) {
+        game.add(new Projectile(this.position, 180, new Vector2d(0, -1), "player"));
+    }
 };
 
 Player.prototype.update = function (dt) {
@@ -221,13 +236,15 @@ Enemy.prototype.update = function (dt) {
 }
 
 Enemy.prototype.fire = function(position) {
-    console.log("TODO: enemy fire");
+    game.add(new Projectile(position, 60, new Vector2d(0, 1), "enemy"));
 }
 
 // Renderer
 var renderer = (function () {
     var _canvas = document.getElementById("game-layer"),
-        _context = _canvas.getContext("2d");
+        _context = _canvas.getContext("2d"),
+        _projectileColors = {"player": "rgb(196, 208, 106)",
+                             "enemy": "rgb(96, 195, 96)"};
     function _drawRectangle(color, entity) {
         _context.fillStyle = color;
         _context.fillRect(entity.position.x - entity.width/2,
@@ -250,6 +267,8 @@ var renderer = (function () {
 "rgb(56, 150, 7)", entity);
             } else if (entity instanceof Player) {
                 _drawRectangle("rgb(255, 255, 0)", entity);
+            } else if (entity instanceof Projectile) {
+                _drawRectangle(_projectileColors[entity.type], entity);
             }
         }
     }
@@ -262,14 +281,59 @@ var renderer = (function () {
 // Physics
 var physics = (function () {
    function _update(dt) {
-       var i,
+       var i, j,
            entity,
            velocity,
-           entities = game.entities();
+           entities = game.entities(),
+           enemies = game.enemies(),
+           player = game.player(),
+           projectiles = game.projectiles();
        for (i = 0; i < entities.length; i++) {
            entity = entities[i];
            velocity = vectorScalarMultiply(entity.direction, entity.speed);
            entity.position = vectorAdd(entity.position, vectorScalarMultiply(velocity, dt));
+       }
+       // List of pairs of entities that we want to check for collisions.
+       var collisionPairs = [];
+       
+       // Enemies vs Player
+       for (i = 0; i < enemies.length; i++) {
+           collisionPairs.push({first: enemies[i],
+                               second: player});
+       }
+       // Projectiles vs Enemies or Player
+       for (i=0; i < projectiles.length; i++) {
+           if (projectiles[i].type === "enemy") {
+               collisionPairs.push({first: projectiles[i],
+                                   second: player});
+           } else if (projectiles[i].type === "player") {
+               for (j=0; j < enemies.length; j++) {
+                collisionPairs.push({first: projectiles[i],
+                                   second: enemies[j]});
+               }
+           }
+       }
+       // Detect collisions.
+       for (i = 0; i < collisionPairs.length; i++) {
+           var first = collisionPairs[i].first;
+           var second = collisionPairs[i].second;
+           if (first && second && first.collisionRectangle().intersects(second.collisionRectangle())) {
+               first.hp -= 1;
+               second.hp -= 1;
+           }
+       }
+       // If enemies touch the floor, just delete them and start the next level.
+       if (game.enemiesRect() && player && game.enemiesRect().bottom() > player.collisionRectangle().bottom()) {
+           for (i = 0; i < enemies.length; i++) {
+               enemies[i].hp -= 1;
+           }
+       }
+       // Projectile leaves game field.
+       for (i = 0; i < projectiles.length; i++) {
+           var proj = projectiles[i];
+           if (!game.gameFieldRect().intersects(proj.collisionRectangle())) {
+               proj.hp -= 1;
+           }
        }
    }
     return {
@@ -304,6 +368,7 @@ document.body.addEventListener('keyup', keyUp);
 var game = (function () {
     var _player,
         _enemies,
+        _projectiles,
         _entities,
         _gameFieldRect,
         _enemiesRect,
@@ -317,6 +382,7 @@ var game = (function () {
         _lastFrameTime = 0;
         _entities = [];
         _enemies = [];
+        _projectiles = [];
         _gameFieldRect = new Rectangle(0, 0, 600, 400);
         _enemiesRect = new Rectangle(0, 0, 0, 0);
         _enemySpeed = 10;
@@ -327,6 +393,24 @@ var game = (function () {
         if (!_started ) {
             window.requestAnimationFrame(this.update.bind(this));
             _started = true;
+        }
+    }
+    
+    function _add(entity) {
+        _entities.push(entity);
+        if (entity instanceof Projectile) {
+            _projectiles.push(entity);
+        }
+    }
+    
+    function _remove(entities) {
+        if (!entities) return;
+        function isNotPresent(item) { return !entities.includes(item); }
+        _entities = _entities.filter(isNotPresent);
+        _enemies = _enemies.filter(isNotPresent);
+        _projectiles = _projectiles.filter(isNotPresent);
+        if (entities.includes(_player)) {
+            _player = undefined;
         }
     }
     
@@ -360,6 +444,23 @@ var game = (function () {
         for (i = 0; i < _entities.length; i++) {
             _entities[i].update(dt);
         }
+        // Clean up after collisions.
+        var entitiesToRemove = [];
+        var gameOver = false;
+        for (i = 0; i < _entities.length; i++) {
+            var e = _entities[i];
+            if (e.hp <= 0) {
+                entitiesToRemove.push(e);
+                if (e instanceof Player) {
+                    gameOver = true;
+                }
+            }
+        }
+        _remove(entitiesToRemove);
+        if (gameOver) {
+            _player = new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0));
+            _entities.push(_player);
+        }
         renderer.render();
         window.requestAnimationFrame(this.update.bind(this));
     }
@@ -367,11 +468,14 @@ var game = (function () {
     return {
         start: _start,
         update: _update,
+        add: _add,
+        remove: _remove,
         entities: function () { return _entities; },
         player: function () { return _player; },
         enemies: function () { return _enemies; },
         gameFieldRect: function() { return _gameFieldRect; },
-        enemiesRect: function() { return _enemiesRect; }
+        enemiesRect: function() { return _enemiesRect; },
+        projectiles: function() { return _projectiles; }
     };
 })();
 
