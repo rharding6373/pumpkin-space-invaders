@@ -239,12 +239,77 @@ Enemy.prototype.fire = function(position) {
     game.add(new Projectile(position, 60, new Vector2d(0, 1), "enemy"));
 }
 
+function Explosion(position, speed, direction, duration) {
+    Entity.call(this, position, speed, direction);
+    this.width = 13;
+    this.height = 13;
+    this.duration = duration;
+}
+Explosion.protype = Object.create(Entity.prototype);
+
+Explosion.prototype.update = function (dt) {
+    Entity.prototype.update.call(this, dt);
+    if (this.time > this.duration) {
+        this.hp = 0;
+    }
+};
+
+// Sprite
+function Sprite(imgPath, frames, frameRate, r, g, b) {
+    var spriteImage = new Image();
+    var image = new Image();
+    
+    spriteImage.onload = function() {
+        var spriteCanvas = document.createElement("canvas");
+        var spriteContext = spriteCanvas.getContext('2d');
+        spriteCanvas.width = spriteImage.width;
+        spriteCanvas.height = spriteImage.height;
+        
+        spriteContext.drawImage(spriteImage, 0, 0, spriteImage.width, spriteImage.height, 0, 0, spriteCanvas.width, spriteCanvas.height);
+        
+        var sourceData = spriteContext.getImageData(0, 0, spriteImage.width, spriteImage.height);
+        
+        var data = sourceData.data;
+        for (var i = 0; i < data.length; i += 4) {
+            data[i] = r;
+            data[i+1] = g;
+            data[i+2] = b;
+            // Fourth element is the alpha channel.
+        }
+        spriteContext.putImageData(sourceData, 0, 0);
+        image.src = spriteCanvas.toDataURL('image/png');
+    };
+    
+    spriteImage.src = imgPath;
+    this.frames = frames;
+    this.frameRate = frameRate;
+    this.timer = 0;
+    this.currentFrame = 0;
+    this.image = image;
+}
+
+Sprite.prototype.update = function (dt) {
+    this.timer += dt;
+    if (this.timer > 1/this.frameRate) {
+        this.timer = 0;
+        this.currentFrame= (this.currentFrame+1)%this.frames;
+    }
+};
+
 // Renderer
 var renderer = (function () {
     var _canvas = document.getElementById("game-layer"),
         _context = _canvas.getContext("2d"),
         _projectileColors = {"player": "rgb(196, 208, 106)",
                              "enemy": "rgb(96, 195, 96)"};
+    var _playerSprite = new Sprite("/img/mushroom.png", 1, 1, 148, 0, 211);
+    var _enemySprite = new Sprite("/img/pumpkin.png", 2, 2, 255, 140, 0);
+    var _explosionSprite = new Sprite("/img/explosion.png", 3, 3, 238, 130, 238);
+    var _sprites = [].concat(_playerSprite, _enemySprite, _explosionSprite);
+    
+    function _drawSprite(sprite, entity) {
+        _context.drawImage(sprite.image, (sprite.image.width/sprite.frames)*sprite.currentFrame, 0, sprite.image.width/sprite.frames, sprite.image.height, entity.position.x-entity.width/2, entity.position.y-entity.height/2, entity.width, entity.height);
+    }
     function _drawRectangle(color, entity) {
         _context.fillStyle = color;
         _context.fillRect(entity.position.x - entity.width/2,
@@ -253,22 +318,33 @@ var renderer = (function () {
                          entity.height)
     }
     
-    function _render() {
+    function _render(dt) {
+        var i, entity, entities = game.entities();
+        var _scaleFactor = _canvas.clientWidth / game.gameFieldRect().width;
+        _scaleFactor = Math.max(1, Math.min(2, _scaleFactor));
+        _canvas.width = game.gameFieldRect().width * _scaleFactor;
+        _canvas.height = game.gameFieldRect().height * _scaleFactor;
+        _context.scale(_scaleFactor, _scaleFactor);
+        // Update sprites 
+        for (i = 0; i < _sprites.length; i++) {
+            _sprites[i].update(dt);
+        }
+             
         // Background
         _context.fillStyle = "black";
         _context.fillRect(0, 0, _canvas.width, _canvas.height);
         
-        var i, entity, entities = game.entities();
         
         for (i = 0; i < entities.length; i++) {
             entity = entities[i];
             if (entity instanceof Enemy) {
-                _drawRectangle(
-"rgb(56, 150, 7)", entity);
+                _drawSprite(_enemySprite, entity);
             } else if (entity instanceof Player) {
-                _drawRectangle("rgb(255, 255, 0)", entity);
+                _drawSprite(_playerSprite, entity);
             } else if (entity instanceof Projectile) {
                 _drawRectangle(_projectileColors[entity.type], entity);
+            } else if (entity instanceof Explosion) {
+                _drawSprite(_explosionSprite, entity);
             }
         }
     }
@@ -451,6 +527,9 @@ var game = (function () {
             var e = _entities[i];
             if (e.hp <= 0) {
                 entitiesToRemove.push(e);
+                if (e instanceof Enemy) {
+                    this.add(new Explosion(e.position, e.speed, e.direction, 1));
+                }
                 if (e instanceof Player) {
                     gameOver = true;
                 }
@@ -461,7 +540,7 @@ var game = (function () {
             _player = new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0));
             _entities.push(_player);
         }
-        renderer.render();
+        renderer.render(dt);
         window.requestAnimationFrame(this.update.bind(this));
     }
     
