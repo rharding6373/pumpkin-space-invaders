@@ -302,9 +302,9 @@ var renderer = (function () {
         _context = _canvas.getContext("2d"),
         _projectileColors = {"player": "rgb(196, 208, 106)",
                              "enemy": "rgb(96, 195, 96)"};
-    var _playerSprite = new Sprite("/img/mushroom.png", 1, 1, 148, 0, 211);
-    var _enemySprite = new Sprite("/img/pumpkin.png", 2, 2, 255, 140, 0);
-    var _explosionSprite = new Sprite("/img/explosion.png", 3, 3, 238, 130, 238);
+    var _playerSprite = new Sprite("img/mushroom.png", 1, 1, 148, 0, 211);
+    var _enemySprite = new Sprite("img/pumpkin.png", 2, 2, 255, 140, 0);
+    var _explosionSprite = new Sprite("img/explosion.png", 3, 3, 238, 130, 238);
     var _sprites = [].concat(_playerSprite, _enemySprite, _explosionSprite);
     
     function _drawSprite(sprite, entity) {
