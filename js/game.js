@@ -78,25 +78,25 @@ function rectangleUnion(r1, r2) {
 function Pool (template) {
     this.template = template;
     this.pool = [];
+    this.available = [];
 }
 
 Pool.prototype.get = function () {
-    for (var i = this.pool.length-1; i >= 0; i--) {
-        if (this.pool[i].available) {
-            this.pool[i].available = false;
-            this.pool[i].object.init();
-            return this.pool[i].object;
-        }
+    if (this.available.length > 0) {
+        var idx = this.available.pop();
+        this.pool[idx].init();
+        return this.pool[idx];
     }
     var obj = this.template.clone();
     obj.init();
-    this.pool.push({available: false, object: obj});
+    this.pool.push(obj);
     return obj;
 }
+
 Pool.prototype.put = function (object) {
-    for (var i = 0; i < this.pool.length; i++) {
-        if (this.pool[i].object === object) {
-            this.pool[i].available = true;
+    for (var i = this.pool.length - 1; i >= 0; i--) {
+        if (this.pool[i] === object) {
+            this.available.push(i);
             break;
         }
     }
@@ -544,18 +544,18 @@ var physics = (function () {
                second.hp -= 1;
            }
        }
-		   // Collisions during the ending.
-		   if (end1 && end2 && projectiles.length > 0) {
-				 if (end1.collisionRectangle().intersects(projectiles[0].collisionRectangle())) {
-					player.hp -= 1;
-				 	end2.hp -= 1;
-					 projectiles[0].hp -= 1;
-				 } else if (end2.collisionRectangle().intersects(projectiles[0].collisionRectangle())) {
-					player.hp -= 1;
-				 	end1.hp -= 1;
-					 projectiles[0].hp -= 1;
-				 }
-			 } 
+       // Collisions during the ending.
+       if (end1 && end2 && projectiles.length > 0) {
+           if (end1.collisionRectangle().intersects(projectiles[0].collisionRectangle())) {
+               player.hp -= 1;
+               end2.hp -= 1;
+               projectiles[0].hp -= 1;
+           } else if (end2.collisionRectangle().intersects(projectiles[0].collisionRectangle())) {
+               player.hp -= 1;
+               end1.hp -= 1;
+               projectiles[0].hp -= 1;
+           }
+       } 
 		 
        // If enemies touch the floor, just delete them and start the next level.
        if (game.enemiesRect() && player && game.enemiesRect().bottom() > player.collisionRectangle().bottom()) {
@@ -601,7 +601,7 @@ document.body.addEventListener('keyup', keyUp);
 
 // Game
 var game = (function () {
-    var __player,
+    var _player,
         _enemies,
         _projectiles,
 				_end1,
@@ -651,8 +651,7 @@ var game = (function () {
         _enemySpeed = 10;
         _enemyFirePercent = 10;
         _enemyDropAmount = 1;
-        _player = new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0));
-        _entities.push(_player);
+        _add(new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0)));
         if (!_started ) {
             window.requestAnimationFrame(this.update.bind(this));
             _started = true;
@@ -663,6 +662,12 @@ var game = (function () {
         _entities.push(entity);
         if (entity instanceof Projectile) {
             _projectiles.push(entity);
+        }
+        if (entity instanceof Player) {
+            _player = entity;
+        }
+        if (entity instanceof Enemy) {
+            _enemies.push(entity);
         }
     }
     
@@ -719,8 +724,7 @@ var game = (function () {
                         enemy.dropTarget = dropTarget;
                         enemy.firePercent = _enemyFirePercent;
                         enemy.dropAmount = _enemyDropAmount;
-                        _enemies.push(enemy);
-                        _entities.push(enemy);
+                        _add(enemy);
                         max_i = Math.max(max_i, _letterDesign[letter][x][0]);
                     }
                     c += max_i;
@@ -757,7 +761,11 @@ var game = (function () {
             if (e.hp <= 0) {
                 entitiesToRemove.push(e);
                 if (e instanceof Enemy) {
-                    _score += 5;
+                    if (_enemiesRect.bottom() > _player.collisionRectangle().bottom() || e.collisionRectangle().intersects(_player.collisionRectangle())) {
+                        _score -= 5;
+                    } else {
+                        _score += 5;
+                    }
                     var eexpl = _explosionPool.get();
                     eexpl.position = e.position;
                     eexpl.speed = e.speed;
@@ -775,8 +783,7 @@ var game = (function () {
         }
         _remove(entitiesToRemove);
         if (player_hit && !_ended) {
-            _player = new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0));
-            _entities.push(_player);
+            _add(new Player(new Vector2d(300, 375), 90, new Vector2d(0, 0)))
         }
         renderer.render(dt);
         window.requestAnimationFrame(this.update.bind(this));
@@ -786,8 +793,6 @@ var game = (function () {
         start: _start,
         update: _update,
         add: _add,
-        remove: _remove,
-        removeAtIndex: _removeAtIndex,
         score: function() {return _score;},
         entities: function () { return _entities; },
         player: function () { return _player; },
@@ -797,7 +802,6 @@ var game = (function () {
         projectiles: function() { return _projectiles; },
         end1: function() { return _end1; },
         end2: function() {return _end2; },
-        projectilePool: function() { return _projectilePool; },
-        explosionPool: function() { return _explosionPool; },
+        projectilePool: function() { return _projectilePool; }
     };
 })();
